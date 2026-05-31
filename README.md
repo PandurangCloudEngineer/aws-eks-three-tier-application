@@ -206,54 +206,47 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: student-cluster
-  region: us-east-1
+  name: "uat-dev"
+  region: "ap-south-1"
+  version: "1.34"
 
 nodeGroups:
-  - name: student-nodes
+  - name: ng-1
     instanceType: t3.medium
-    desiredCapacity: 2
-    minSize: 1
-    maxSize: 3
+    desiredCapacity: 3
+    volumeSize: 30
+    privateNetworking: true
+    ssh:
+      publicKeyName: pandu_final
 ```
 
 ---
 
 ### `k8s/mysql-pod.yaml`
 ```yaml
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: mysql-pod
   labels:
-    app: mysql
+    app: datastore-db
+  name: datastore-db
 spec:
-  containers:
-    - name: mysql
-      image: mysql:8.0
-      env:
-        - name: MYSQL_ROOT_PASSWORD
-          value: "rootpassword"
-        - name: MYSQL_DATABASE
-          value: "studentsdb"
-        - name: MYSQL_USER
-          value: "admin"
-        - name: MYSQL_PASSWORD
-          value: "adminpassword"
-      ports:
-        - containerPort: 3306
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mysql-svc
-spec:
+  replicas: 1
   selector:
-    app: mysql
-  ports:
-    - port: 3306
-      targetPort: 3306
-  type: ClusterIP
+    matchLabels:
+      app: datastore-db
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: datastore-db
+    spec:
+      containers:
+      - image: mysql
+        name: mysql
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: test123
 ```
 
 ---
@@ -262,44 +255,53 @@ spec:
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
-  name: student-backend
+  name: datastore-backend
+  labels:
+    type: backend
+
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: student-backend
   template:
     metadata:
+      name: datastore-backend
       labels:
-        app: student-backend
+        type: backend
+
     spec:
       containers:
-        - name: backend
-          image: <account-id>.dkr.ecr.<region>.amazonaws.com/student-backend:latest
+        - name: datastore-backend
+          image: 868917998696.dkr.ecr.ap-south-1.amazonaws.com/datastore-be:v2
           env:
-            - name: DB_HOST
-              value: "mysql-svc"          # Kubernetes service name = DNS hostname
-            - name: DB_USER
-              value: "admin"
-            - name: DB_PASSWORD
-              value: "adminpassword"
-            - name: DB_NAME
-              value: "studentsdb"
-          ports:
-            - containerPort: 5000
+            - name: MYSQL_HOST
+              value: jdbc:mysql://datastore-db-svc:3306/datastore?createDatabaseIfNotExist=true
+
+            - name: MYSQL_USERNAME
+              value: root
+
+            - name: MYSQL_PASSWORD
+              value: test123
+
+  replicas: 1
+
+  selector:
+    matchLabels:
+      type: backend
+
 ---
 apiVersion: v1
 kind: Service
+
 metadata:
-  name: backend-svc
+  name: datastore-backend-svc
+
 spec:
-  selector:
-    app: student-backend
   ports:
-    - port: 5000
-      targetPort: 5000
-  type: ClusterIP
+    - port: 8081
+      targetPort: 8084
+
+  selector:
+    type: backend
 ```
 
 ---
@@ -308,38 +310,53 @@ spec:
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
-  name: student-frontend
+  name: datastore-frontend
+  labels:
+    type: frontend
+
 spec:
-  replicas: 1
+  replicas: 3
+
   selector:
     matchLabels:
-      app: student-frontend
+      type: frontend
+
   template:
     metadata:
       labels:
-        app: student-frontend
+        type: frontend
+
     spec:
       containers:
-        - name: frontend
-          image: <account-id>.dkr.ecr.<region>.amazonaws.com/student-frontend:latest
+        - name: datastore-frontend
+          image: 868917998696.dkr.ecr.ap-south-1.amazonaws.com/datastore-fe:v2
+
           env:
-            - name: REACT_APP_API_URL
-              value: "http://backend-svc:5000"   # Backend ClusterIP service
+            - name: API_URL
+              value: "http://datastore-backend-svc:8081"
+
           ports:
-            - containerPort: 3000
+            - containerPort: 8080
+
 ---
 apiVersion: v1
 kind: Service
+
 metadata:
-  name: student-frontend-svc
+  name: datastore-fe-svc
+
 spec:
-  selector:
-    app: student-frontend
-  ports:
-    - port: 80
-      targetPort: 3000
   type: LoadBalancer
+
+  selector:
+    type: frontend
+
+  ports:
+    - port: 8081
+      targetPort: 8080
+      protocol: TCP
 ```
 
 ---
